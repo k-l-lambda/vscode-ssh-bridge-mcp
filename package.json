@@ -24,6 +24,10 @@
       {
         "command": "ssh-bridge-mcp.testConnection",
         "title": "SSH Bridge: Test MCP Connection"
+      },
+      {
+        "command": "ssh-bridge-mcp.showSetup",
+        "title": "SSH Bridge: Show Setup Instructions"
       }
     ],
     "configuration": {
