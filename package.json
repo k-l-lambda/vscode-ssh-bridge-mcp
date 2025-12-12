@@ -1,0 +1,61 @@
+{
+  "name": "ssh-bridge-mcp",
+  "displayName": "SSH Bridge MCP",
+  "description": "MCP toolkit for VS Code Remote SSH - notifications, TTS, and browser automation",
+  "version": "0.1.0",
+  "publisher": "kllam",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": ["ui", "workspace"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ssh-bridge-mcp.playNotification",
+        "title": "SSH Bridge: Play Notification Sound"
+      },
+      {
+        "command": "ssh-bridge-mcp.testConnection",
+        "title": "SSH Bridge: Test MCP Connection"
+      }
+    ],
+    "configuration": {
+      "title": "SSH Bridge MCP",
+      "properties": {
+        "ssh-bridge-mcp.notificationSound": {
+          "type": "string",
+          "default": "default",
+          "enum": ["default", "success", "error", "warning"],
+          "description": "Notification sound type"
+        },
+        "ssh-bridge-mcp.mcpServers": {
+          "type": "array",
+          "default": [],
+          "description": "List of MCP server endpoints (SSE)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {}
+}
