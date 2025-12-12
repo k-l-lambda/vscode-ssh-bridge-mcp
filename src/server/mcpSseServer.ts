@@ -157,13 +157,14 @@ export class McpSseServer {
         }
 
         const url = req.url || '/';
+        const urlPath = url.split('?')[0];  // Remove query string
         this.log(`${req.method} ${url}`);
 
-        if (url === '/sse' && req.method === 'GET') {
+        if (urlPath === '/sse' && req.method === 'GET') {
             this.handleSseConnection(req, res);
-        } else if (url === '/message' && req.method === 'POST') {
+        } else if (urlPath === '/message' && req.method === 'POST') {
             this.handleMessage(req, res);
-        } else if (url === '/health' && req.method === 'GET') {
+        } else if (urlPath === '/health' && req.method === 'GET') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ status: 'ok', port: this.port }));
         } else {
