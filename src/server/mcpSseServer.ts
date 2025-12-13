@@ -13,6 +13,15 @@ let puppeteer: typeof import('puppeteer') | null = null;
 let browser: import('puppeteer').Browser | null = null;
 let page: import('puppeteer').Page | null = null;
 
+// Console log buffer
+interface ConsoleLogEntry {
+    type: string;
+    text: string;
+    timestamp: string;
+}
+const consoleLogBuffer: ConsoleLogEntry[] = [];
+const MAX_CONSOLE_LOGS = 100;
+
 interface McpRequest {
     jsonrpc: '2.0';
     id: number | string;
@@ -225,6 +234,26 @@ const TOOLS = [
                 }
             },
             required: ['selector']
+        }
+    },
+    {
+        name: 'browser_console',
+        description: 'Get browser console logs (errors, warnings, logs)',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                clear: {
+                    type: 'boolean',
+                    description: 'Clear logs after retrieving',
+                    default: false
+                },
+                filter: {
+                    type: 'string',
+                    enum: ['all', 'error', 'warning', 'log', 'info'],
+                    description: 'Filter by log type',
+                    default: 'all'
+                }
+            }
         }
     }
 ];
@@ -511,6 +540,10 @@ export class McpSseServer {
                     result = await this.handleBrowserHover(args);
                     break;
 
+                case 'browser_console':
+                    result = await this.handleBrowserConsole(args);
+                    break;
+
                 default:
                     return {
                         jsonrpc: '2.0',
@@ -703,14 +736,50 @@ export class McpSseServer {
             });
             const pages = await browser.pages();
             page = pages[0] || await browser.newPage();
+
+            // Setup console log listener
+            this.setupConsoleListener(page);
+
             this.log('Browser launched');
         }
 
         if (!page || page.isClosed()) {
             page = await browser.newPage();
+            this.setupConsoleListener(page);
         }
 
         return page;
+    }
+
+    /**
+     * Setup console log listener on a page
+     */
+    private setupConsoleListener(p: import('puppeteer').Page): void {
+        p.on('console', (msg) => {
+            const entry: ConsoleLogEntry = {
+                type: msg.type(),
+                text: msg.text(),
+                timestamp: new Date().toISOString()
+            };
+            consoleLogBuffer.push(entry);
+            // Keep buffer size limited
+            if (consoleLogBuffer.length > MAX_CONSOLE_LOGS) {
+                consoleLogBuffer.shift();
+            }
+        });
+
+        p.on('pageerror', (error: unknown) => {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            const entry: ConsoleLogEntry = {
+                type: 'error',
+                text: `Page Error: ${errorMsg}`,
+                timestamp: new Date().toISOString()
+            };
+            consoleLogBuffer.push(entry);
+            if (consoleLogBuffer.length > MAX_CONSOLE_LOGS) {
+                consoleLogBuffer.shift();
+            }
+        });
     }
 
     /**
@@ -869,6 +938,32 @@ export class McpSseServer {
             return { success: true };
         } catch (error) {
             return { success: false, error: `Hover failed: ${error}` };
+        }
+    }
+
+    /**
+     * Handle browser_console tool - get console logs
+     */
+    private async handleBrowserConsole(args: Record<string, unknown>): Promise<{ success: boolean; logs: ConsoleLogEntry[]; count: number; error?: string }> {
+        const clear = args.clear as boolean || false;
+        const filter = args.filter as string || 'all';
+
+        try {
+            let logs = [...consoleLogBuffer];
+
+            // Filter by type if specified
+            if (filter !== 'all') {
+                logs = logs.filter(log => log.type === filter);
+            }
+
+            // Clear buffer if requested
+            if (clear) {
+                consoleLogBuffer.length = 0;
+            }
+
+            return { success: true, logs, count: logs.length };
+        } catch (error) {
+            return { success: false, logs: [], count: 0, error: `Console failed: ${error}` };
         }
     }
 }
