@@ -5,6 +5,15 @@
   "version": "0.1.0",
   "publisher": "kllam",
   "icon": "images/icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/k-l-lambda/vscode-ssh-bridge-mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/k-l-lambda/vscode-ssh-bridge-mcp/issues"
+  },
+  "homepage": "https://github.com/k-l-lambda/vscode-ssh-bridge-mcp#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
