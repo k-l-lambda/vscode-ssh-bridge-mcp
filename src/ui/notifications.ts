@@ -201,16 +201,15 @@ export class NotificationManager {
             const platform = process.platform;
 
             if (platform === 'win32') {
-                // PowerShell script to flash the window using FlashWindowEx API
+                // Use a simpler PowerShell approach with base64 encoded script
                 const script = `
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
-public class WindowFlash {
+public class WF {
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool FlashWindowEx(ref FLASHWINFO pwfi);
-
     [StructLayout(LayoutKind.Sequential)]
     public struct FLASHWINFO {
         public uint cbSize;
@@ -219,29 +218,22 @@ public class WindowFlash {
         public uint uCount;
         public uint dwTimeout;
     }
-
-    public const uint FLASHW_ALL = 3;
-    public const uint FLASHW_TIMERNOFG = 12;
-
-    public static bool Flash(IntPtr handle, uint count) {
+    public static bool Flash(IntPtr h, uint c) {
         FLASHWINFO fi = new FLASHWINFO();
         fi.cbSize = (uint)Marshal.SizeOf(fi);
-        fi.hwnd = handle;
-        fi.dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG;
-        fi.uCount = count;
+        fi.hwnd = h;
+        fi.dwFlags = 15;
+        fi.uCount = c;
         fi.dwTimeout = 0;
         return FlashWindowEx(ref fi);
     }
 }
 "@
-
-# Find VS Code window
-$vsCodeProcess = Get-Process -Name "Code" -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($vsCodeProcess) {
-    [WindowFlash]::Flash($vsCodeProcess.MainWindowHandle, ${count})
-}
+Get-Process -Name "Code" -EA 0 | Select -First 1 | % { [WF]::Flash($_.MainWindowHandle, ${count}) }
 `;
-                await execAsync(`powershell -Command "${script.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, {
+                // Encode the script as base64 to avoid escaping issues
+                const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
+                await execAsync(`powershell -EncodedCommand ${encodedScript}`, {
                     windowsHide: true
                 });
                 return true;
