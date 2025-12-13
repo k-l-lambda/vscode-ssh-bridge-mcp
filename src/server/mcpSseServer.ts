@@ -85,10 +85,26 @@ const TOOLS = [
     },
     {
         name: 'play_attention',
-        description: 'Play attention-grabbing sound (multiple beeps) to get user attention',
+        description: 'Get user attention with sound and/or taskbar flash',
         inputSchema: {
             type: 'object',
-            properties: {}
+            properties: {
+                sound: {
+                    type: 'boolean',
+                    description: 'Play attention sound',
+                    default: true
+                },
+                flash: {
+                    type: 'boolean',
+                    description: 'Flash taskbar button (Windows only)',
+                    default: true
+                },
+                flashCount: {
+                    type: 'number',
+                    description: 'Number of times to flash',
+                    default: 5
+                }
+            }
         }
     },
     {
@@ -503,7 +519,16 @@ export class McpSseServer {
                     break;
 
                 case 'play_attention':
-                    await this.notificationManager.playAttention();
+                    const playSound = args.sound !== false;  // default true
+                    const flashTaskbar = args.flash !== false;  // default true
+                    const attentionFlashCount = (args.flashCount as number) || 5;
+
+                    if (playSound) {
+                        await this.notificationManager.playAttention();
+                    }
+                    if (flashTaskbar) {
+                        await this.notificationManager.flashWindow(attentionFlashCount);
+                    }
                     result = { success: true };
                     break;
 
