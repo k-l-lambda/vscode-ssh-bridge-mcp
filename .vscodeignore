@@ -1,0 +1,46 @@
+# Source files (compiled JS is in out/)
+src/**
+**/*.ts
+!out/**/*.js
+
+# Development files
+.vscode/**
+.git/**
+.gitignore
+tsconfig.json
+*.vsix
+
+# Test files
+**/*.test.js
+**/test/**
+**/tests/**
+
+# Documentation (keep README)
+CHANGELOG.md
+CONTRIBUTING.md
+
+# Node modules - exclude unnecessary files
+node_modules/**/*.md
+node_modules/**/*.markdown
+node_modules/**/README*
+node_modules/**/CHANGELOG*
+node_modules/**/LICENSE*
+node_modules/**/license*
+node_modules/**/.npmignore
+node_modules/**/.travis.yml
+node_modules/**/.eslintrc*
+node_modules/**/.prettierrc*
+node_modules/**/tsconfig.json
+node_modules/**/*.ts
+!node_modules/**/*.d.ts
+node_modules/**/*.map
+node_modules/**/test/**
+node_modules/**/tests/**
+node_modules/**/__tests__/**
+node_modules/**/example/**
+node_modules/**/examples/**
+node_modules/**/docs/**
+node_modules/**/doc/**
+
+# Puppeteer - keep only essential files
+# Chrome is downloaded to cache, not node_modules
