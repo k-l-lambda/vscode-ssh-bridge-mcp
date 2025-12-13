@@ -169,6 +169,10 @@ const TOOLS = [
                 height: {
                     type: 'number',
                     description: 'Height in pixels (default: 600)'
+                },
+                remoteHost: {
+                    type: 'string',
+                    description: 'SCP destination to transfer screenshot (e.g., "user@host:/path")'
                 }
             },
             required: ['name']
@@ -830,21 +834,21 @@ export class McpSseServer {
     /**
      * Handle browser_screenshot tool
      */
-    private async handleBrowserScreenshot(args: Record<string, unknown>): Promise<{ success: boolean; path?: string; error?: string }> {
+    private async handleBrowserScreenshot(args: Record<string, unknown>): Promise<{ success: boolean; path?: string; remotePath?: string; error?: string }> {
         const name = args.name as string || 'screenshot';
         const selector = args.selector as string | undefined;
         const width = args.width as number || 800;
         const height = args.height as number || 600;
+        const remoteHost = args.remoteHost as string | undefined;  // e.g., "user@host:/path"
 
         try {
             const p = await this.ensureBrowser();
             await p.setViewport({ width, height });
 
+            const fs = require('fs');
             const screenshotDir = path.join(process.env.USERPROFILE || '', 'Pictures', 'Screenshots');
             const screenshotPath = path.join(screenshotDir, `${name}-${Date.now()}.png`);
 
-            // Ensure directory exists
-            const fs = require('fs');
             if (!fs.existsSync(screenshotDir)) {
                 fs.mkdirSync(screenshotDir, { recursive: true });
             }
@@ -861,6 +865,24 @@ export class McpSseServer {
             }
 
             this.log(`Screenshot saved: ${screenshotPath}`);
+
+            // Transfer to remote if specified
+            if (remoteHost) {
+                try {
+                    const { execSync } = require('child_process');
+                    const fileName = `${name}-${Date.now()}.png`;
+                    // Use forward slashes for SCP on Windows
+                    const scpPath = screenshotPath.replace(/\\/g, '/');
+                    const remoteFile = `${remoteHost}/${fileName}`;
+                    execSync(`scp "${scpPath}" "${remoteFile}"`, { timeout: 30000 });
+                    this.log(`Screenshot transferred to: ${remoteFile}`);
+                    return { success: true, path: screenshotPath, remotePath: remoteFile };
+                } catch (scpError) {
+                    this.log(`SCP transfer failed: ${scpError}`);
+                    return { success: true, path: screenshotPath, error: `SCP failed: ${scpError}` };
+                }
+            }
+
             return { success: true, path: screenshotPath };
         } catch (error) {
             return { success: false, error: `Screenshot failed: ${error}` };
