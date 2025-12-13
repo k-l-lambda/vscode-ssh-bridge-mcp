@@ -3,7 +3,7 @@
   "displayName": "SSH Bridge MCP",
   "description": "MCP toolkit for VS Code Remote SSH - notifications, TTS, and browser automation",
   "version": "0.1.0",
-  "publisher": "kllam",
+  "publisher": "KLLambda",
   "icon": "images/icon.png",
   "license": "MIT",
   "repository": {
