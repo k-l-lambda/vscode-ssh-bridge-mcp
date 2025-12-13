@@ -75,6 +75,32 @@ const TOOLS = [
             type: 'object',
             properties: {}
         }
+    },
+    {
+        name: 'speak',
+        description: 'Speak text aloud using Kokoro TTS. Supports English and Chinese with auto language detection.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                text: {
+                    type: 'string',
+                    description: 'Text to speak'
+                },
+                voice: {
+                    type: 'string',
+                    enum: ['default', 'female', 'male'],
+                    description: 'Voice type',
+                    default: 'default'
+                },
+                lang: {
+                    type: 'string',
+                    enum: ['en', 'zh', 'auto'],
+                    description: 'Language (auto-detected if not specified)',
+                    default: 'auto'
+                }
+            },
+            required: ['text']
+        }
     }
 ];
 
@@ -327,6 +353,10 @@ export class McpSseServer {
                     result = { success: true };
                     break;
 
+                case 'speak':
+                    result = await this.handleSpeak(args);
+                    break;
+
                 default:
                     return {
                         jsonrpc: '2.0',
@@ -375,5 +405,107 @@ export class McpSseServer {
     private log(message: string): void {
         const timestamp = new Date().toISOString();
         this.outputChannel.appendLine(`[${timestamp}] ${message}`);
+    }
+
+    /**
+     * Handle speak tool - calls Kokoro TTS server
+     */
+    private async handleSpeak(args: Record<string, unknown>): Promise<{ success: boolean; duration_ms?: number; error?: string }> {
+        const text = args.text as string;
+        const voice = args.voice as string || 'default';
+        const lang = args.lang as string || 'auto';
+
+        if (!text) {
+            return { success: false, error: 'No text provided' };
+        }
+
+        const ttsPort = 9848;
+        const ttsUrl = `http://127.0.0.1:${ttsPort}/speak_and_play`;
+
+        try {
+            // Check if TTS server is running
+            const healthCheck = await this.httpRequest(`http://127.0.0.1:${ttsPort}/health`, 'GET');
+            if (!healthCheck.ok) {
+                // Try to start the TTS server
+                this.log('TTS server not running, attempting to start...');
+                await this.startTtsServer();
+                // Wait a bit for it to start
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+
+            // Send TTS request
+            const response = await this.httpRequest(ttsUrl, 'POST', {
+                text,
+                voice: voice === 'auto' ? undefined : voice,
+                lang: lang === 'auto' ? undefined : lang
+            });
+
+            if (response.ok) {
+                const data = JSON.parse(response.body);
+                return { success: true, duration_ms: data.duration_ms };
+            } else {
+                return { success: false, error: `TTS failed: ${response.body}` };
+            }
+        } catch (error) {
+            this.log(`TTS error: ${error}`);
+            return { success: false, error: `TTS error: ${error}` };
+        }
+    }
+
+    /**
+     * Start the Kokoro TTS server
+     */
+    private async startTtsServer(): Promise<void> {
+        const { exec } = require('child_process');
+        const path = require('path');
+
+        // Path to kokoro server
+        const kokoroPath = path.join(process.env.USERPROFILE || '', 'work', 'kokoro-test');
+        const pythonPath = path.join(kokoroPath, 'env', 'Scripts', 'python.exe');
+        const serverScript = path.join(kokoroPath, 'kokoro_server.py');
+
+        this.log(`Starting TTS server: ${pythonPath} ${serverScript}`);
+
+        exec(`"${pythonPath}" "${serverScript}"`, {
+            cwd: kokoroPath,
+            windowsHide: true
+        }, (error: Error | null) => {
+            if (error) {
+                this.log(`TTS server error: ${error.message}`);
+            }
+        });
+    }
+
+    /**
+     * Simple HTTP request helper
+     */
+    private httpRequest(url: string, method: string, body?: unknown): Promise<{ ok: boolean; body: string }> {
+        return new Promise((resolve) => {
+            const urlObj = new URL(url);
+            const options = {
+                hostname: urlObj.hostname,
+                port: urlObj.port,
+                path: urlObj.pathname,
+                method,
+                headers: body ? { 'Content-Type': 'application/json' } : {}
+            };
+
+            const req = http.request(options, (res) => {
+                let data = '';
+                res.on('data', chunk => { data += chunk; });
+                res.on('end', () => {
+                    resolve({ ok: res.statusCode === 200, body: data });
+                });
+            });
+
+            req.on('error', (e) => {
+                resolve({ ok: false, body: e.message });
+            });
+
+            if (body) {
+                req.write(JSON.stringify(body));
+            }
+            req.end();
+        });
     }
 }
