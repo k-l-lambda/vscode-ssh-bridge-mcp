@@ -5,7 +5,13 @@
 
 import * as http from 'http';
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { NotificationManager } from '../ui/notifications';
+
+// Puppeteer types - lazy loaded
+let puppeteer: typeof import('puppeteer') | null = null;
+let browser: import('puppeteer').Browser | null = null;
+let page: import('puppeteer').Page | null = null;
 
 interface McpRequest {
     jsonrpc: '2.0';
@@ -100,6 +106,125 @@ const TOOLS = [
                 }
             },
             required: ['text']
+        }
+    },
+    // Puppeteer tools for browser automation
+    {
+        name: 'browser_navigate',
+        description: 'Navigate the browser to a URL',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                url: {
+                    type: 'string',
+                    description: 'URL to navigate to'
+                }
+            },
+            required: ['url']
+        }
+    },
+    {
+        name: 'browser_screenshot',
+        description: 'Take a screenshot of the current page or a specific element',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                name: {
+                    type: 'string',
+                    description: 'Name for the screenshot'
+                },
+                selector: {
+                    type: 'string',
+                    description: 'CSS selector for element to screenshot (optional)'
+                },
+                width: {
+                    type: 'number',
+                    description: 'Width in pixels (default: 800)'
+                },
+                height: {
+                    type: 'number',
+                    description: 'Height in pixels (default: 600)'
+                }
+            },
+            required: ['name']
+        }
+    },
+    {
+        name: 'browser_click',
+        description: 'Click an element on the page',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                selector: {
+                    type: 'string',
+                    description: 'CSS selector for element to click'
+                }
+            },
+            required: ['selector']
+        }
+    },
+    {
+        name: 'browser_fill',
+        description: 'Fill out an input field',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                selector: {
+                    type: 'string',
+                    description: 'CSS selector for input field'
+                },
+                value: {
+                    type: 'string',
+                    description: 'Value to fill'
+                }
+            },
+            required: ['selector', 'value']
+        }
+    },
+    {
+        name: 'browser_evaluate',
+        description: 'Execute JavaScript in the browser console',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                script: {
+                    type: 'string',
+                    description: 'JavaScript code to execute'
+                }
+            },
+            required: ['script']
+        }
+    },
+    {
+        name: 'browser_select',
+        description: 'Select an option from a dropdown',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                selector: {
+                    type: 'string',
+                    description: 'CSS selector for select element'
+                },
+                value: {
+                    type: 'string',
+                    description: 'Value to select'
+                }
+            },
+            required: ['selector', 'value']
+        }
+    },
+    {
+        name: 'browser_hover',
+        description: 'Hover over an element on the page',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                selector: {
+                    type: 'string',
+                    description: 'CSS selector for element to hover'
+                }
+            },
+            required: ['selector']
         }
     }
 ];
@@ -357,6 +482,35 @@ export class McpSseServer {
                     result = await this.handleSpeak(args);
                     break;
 
+                // Browser automation tools
+                case 'browser_navigate':
+                    result = await this.handleBrowserNavigate(args);
+                    break;
+
+                case 'browser_screenshot':
+                    result = await this.handleBrowserScreenshot(args);
+                    break;
+
+                case 'browser_click':
+                    result = await this.handleBrowserClick(args);
+                    break;
+
+                case 'browser_fill':
+                    result = await this.handleBrowserFill(args);
+                    break;
+
+                case 'browser_evaluate':
+                    result = await this.handleBrowserEvaluate(args);
+                    break;
+
+                case 'browser_select':
+                    result = await this.handleBrowserSelect(args);
+                    break;
+
+                case 'browser_hover':
+                    result = await this.handleBrowserHover(args);
+                    break;
+
                 default:
                     return {
                         jsonrpc: '2.0',
@@ -524,5 +678,197 @@ export class McpSseServer {
             }
             req.end();
         });
+    }
+
+    // ==================== Browser Automation Methods ====================
+
+    /**
+     * Ensure browser is initialized
+     */
+    private async ensureBrowser(): Promise<import('puppeteer').Page> {
+        if (!puppeteer) {
+            try {
+                puppeteer = require('puppeteer');
+            } catch (e) {
+                throw new Error('Puppeteer not installed. Run: npm install puppeteer');
+            }
+        }
+
+        if (!browser || !browser.isConnected()) {
+            this.log('Launching browser...');
+            browser = await puppeteer!.launch({
+                headless: false,  // Show browser window
+                defaultViewport: { width: 1280, height: 800 },
+                args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const pages = await browser.pages();
+            page = pages[0] || await browser.newPage();
+            this.log('Browser launched');
+        }
+
+        if (!page || page.isClosed()) {
+            page = await browser.newPage();
+        }
+
+        return page;
+    }
+
+    /**
+     * Handle browser_navigate tool
+     */
+    private async handleBrowserNavigate(args: Record<string, unknown>): Promise<{ success: boolean; url?: string; title?: string; error?: string }> {
+        const url = args.url as string;
+        if (!url) {
+            return { success: false, error: 'No URL provided' };
+        }
+
+        try {
+            const p = await this.ensureBrowser();
+            await p.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+            const title = await p.title();
+            this.log(`Navigated to: ${url}`);
+            return { success: true, url, title };
+        } catch (error) {
+            return { success: false, error: `Navigation failed: ${error}` };
+        }
+    }
+
+    /**
+     * Handle browser_screenshot tool
+     */
+    private async handleBrowserScreenshot(args: Record<string, unknown>): Promise<{ success: boolean; path?: string; error?: string }> {
+        const name = args.name as string || 'screenshot';
+        const selector = args.selector as string | undefined;
+        const width = args.width as number || 800;
+        const height = args.height as number || 600;
+
+        try {
+            const p = await this.ensureBrowser();
+            await p.setViewport({ width, height });
+
+            const screenshotDir = path.join(process.env.USERPROFILE || '', 'Pictures', 'Screenshots');
+            const screenshotPath = path.join(screenshotDir, `${name}-${Date.now()}.png`);
+
+            // Ensure directory exists
+            const fs = require('fs');
+            if (!fs.existsSync(screenshotDir)) {
+                fs.mkdirSync(screenshotDir, { recursive: true });
+            }
+
+            if (selector) {
+                const element = await p.$(selector);
+                if (element) {
+                    await element.screenshot({ path: screenshotPath });
+                } else {
+                    return { success: false, error: `Element not found: ${selector}` };
+                }
+            } else {
+                await p.screenshot({ path: screenshotPath, fullPage: false });
+            }
+
+            this.log(`Screenshot saved: ${screenshotPath}`);
+            return { success: true, path: screenshotPath };
+        } catch (error) {
+            return { success: false, error: `Screenshot failed: ${error}` };
+        }
+    }
+
+    /**
+     * Handle browser_click tool
+     */
+    private async handleBrowserClick(args: Record<string, unknown>): Promise<{ success: boolean; error?: string }> {
+        const selector = args.selector as string;
+        if (!selector) {
+            return { success: false, error: 'No selector provided' };
+        }
+
+        try {
+            const p = await this.ensureBrowser();
+            await p.click(selector);
+            this.log(`Clicked: ${selector}`);
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: `Click failed: ${error}` };
+        }
+    }
+
+    /**
+     * Handle browser_fill tool
+     */
+    private async handleBrowserFill(args: Record<string, unknown>): Promise<{ success: boolean; error?: string }> {
+        const selector = args.selector as string;
+        const value = args.value as string;
+        if (!selector || value === undefined) {
+            return { success: false, error: 'Selector and value required' };
+        }
+
+        try {
+            const p = await this.ensureBrowser();
+            // Clear existing value first
+            await p.click(selector, { clickCount: 3 });
+            await p.type(selector, value);
+            this.log(`Filled ${selector} with value`);
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: `Fill failed: ${error}` };
+        }
+    }
+
+    /**
+     * Handle browser_evaluate tool
+     */
+    private async handleBrowserEvaluate(args: Record<string, unknown>): Promise<{ success: boolean; result?: unknown; error?: string }> {
+        const script = args.script as string;
+        if (!script) {
+            return { success: false, error: 'No script provided' };
+        }
+
+        try {
+            const p = await this.ensureBrowser();
+            const result = await p.evaluate(script);
+            this.log(`Evaluated script`);
+            return { success: true, result };
+        } catch (error) {
+            return { success: false, error: `Evaluate failed: ${error}` };
+        }
+    }
+
+    /**
+     * Handle browser_select tool
+     */
+    private async handleBrowserSelect(args: Record<string, unknown>): Promise<{ success: boolean; error?: string }> {
+        const selector = args.selector as string;
+        const value = args.value as string;
+        if (!selector || !value) {
+            return { success: false, error: 'Selector and value required' };
+        }
+
+        try {
+            const p = await this.ensureBrowser();
+            await p.select(selector, value);
+            this.log(`Selected ${value} in ${selector}`);
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: `Select failed: ${error}` };
+        }
+    }
+
+    /**
+     * Handle browser_hover tool
+     */
+    private async handleBrowserHover(args: Record<string, unknown>): Promise<{ success: boolean; error?: string }> {
+        const selector = args.selector as string;
+        if (!selector) {
+            return { success: false, error: 'No selector provided' };
+        }
+
+        try {
+            const p = await this.ensureBrowser();
+            await p.hover(selector);
+            this.log(`Hovered: ${selector}`);
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: `Hover failed: ${error}` };
+        }
     }
 }

@@ -10,7 +10,10 @@
   "categories": [
     "Other"
   ],
-  "extensionKind": ["ui", "workspace"],
+  "extensionKind": [
+    "ui",
+    "workspace"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -36,7 +39,12 @@
         "ssh-bridge-mcp.notificationSound": {
           "type": "string",
           "default": "default",
-          "enum": ["default", "success", "error", "warning"],
+          "enum": [
+            "default",
+            "success",
+            "error",
+            "warning"
+          ],
           "description": "Notification sound type"
         },
         "ssh-bridge-mcp.mcpServers": {
@@ -61,5 +69,7 @@
     "eslint": "^8.0.0",
     "typescript": "^5.3.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "puppeteer": "^24.33.0"
+  }
 }
