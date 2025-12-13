@@ -419,7 +419,7 @@ export class McpSseServer {
             return { success: false, error: 'No text provided' };
         }
 
-        const ttsPort = 9848;
+        const ttsPort = 19849;
         const ttsUrl = `http://127.0.0.1:${ttsPort}/speak_and_play`;
 
         try {
@@ -434,11 +434,15 @@ export class McpSseServer {
             }
 
             // Send TTS request
-            const response = await this.httpRequest(ttsUrl, 'POST', {
-                text,
-                voice: voice === 'auto' ? undefined : voice,
-                lang: lang === 'auto' ? undefined : lang
-            });
+            const requestBody: Record<string, string> = { text };
+            if (voice && voice !== 'default') {
+                requestBody.voice = voice;
+            }
+            if (lang && lang !== 'auto') {
+                requestBody.lang = lang;
+            }
+            this.log(`TTS request: ${JSON.stringify(requestBody)}`);
+            const response = await this.httpRequest(ttsUrl, 'POST', requestBody);
 
             if (response.ok) {
                 const data = JSON.parse(response.body);
@@ -482,13 +486,21 @@ export class McpSseServer {
     private httpRequest(url: string, method: string, body?: unknown): Promise<{ ok: boolean; body: string }> {
         return new Promise((resolve) => {
             const urlObj = new URL(url);
-            const options = {
+            const bodyStr = body ? JSON.stringify(body) : undefined;
+            const options: http.RequestOptions = {
                 hostname: urlObj.hostname,
                 port: urlObj.port,
                 path: urlObj.pathname,
                 method,
-                headers: body ? { 'Content-Type': 'application/json' } : {}
+                timeout: 60000  // 60 second timeout for TTS generation
             };
+
+            if (bodyStr) {
+                options.headers = {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(bodyStr)
+                };
+            }
 
             const req = http.request(options, (res) => {
                 let data = '';
@@ -502,8 +514,13 @@ export class McpSseServer {
                 resolve({ ok: false, body: e.message });
             });
 
-            if (body) {
-                req.write(JSON.stringify(body));
+            req.on('timeout', () => {
+                req.destroy();
+                resolve({ ok: false, body: 'Request timeout' });
+            });
+
+            if (bodyStr) {
+                req.write(bodyStr);
             }
             req.end();
         });

@@ -6,9 +6,15 @@
 import * as vscode from 'vscode';
 import { NotificationManager } from './ui/notifications';
 import { McpSseServer } from './server/mcpSseServer';
+import { ChildProcess, spawn } from 'child_process';
+import * as path from 'path';
+import * as http from 'http';
 
 let notificationManager: NotificationManager;
 let mcpServer: McpSseServer;
+let ttsServerProcess: ChildProcess | null = null;
+
+const TTS_PORT = 19849;  // Use a unique port to avoid conflicts
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('SSH Bridge MCP is now active');
@@ -118,9 +124,105 @@ export async function activate(context: vscode.ExtensionContext) {
         showSetupCmd,
         remoteNotifyCmd
     );
+
+    // Start TTS server in background
+    startTtsServer();
+}
+
+/**
+ * Check if TTS server is running
+ */
+async function isTtsServerRunning(): Promise<boolean> {
+    return new Promise((resolve) => {
+        const req = http.request({
+            hostname: '127.0.0.1',
+            port: TTS_PORT,
+            path: '/health',
+            method: 'GET',
+            timeout: 1000
+        }, (res) => {
+            resolve(res.statusCode === 200);
+        });
+        req.on('error', () => resolve(false));
+        req.on('timeout', () => { req.destroy(); resolve(false); });
+        req.end();
+    });
+}
+
+/**
+ * Start the Kokoro TTS server
+ */
+async function startTtsServer(): Promise<void> {
+    // Check if already running
+    if (await isTtsServerRunning()) {
+        console.log('[TTS] Server already running');
+        return;
+    }
+
+    const userProfile = process.env.USERPROFILE || process.env.HOME || '';
+    const kokoroPath = path.join(userProfile, 'work', 'kokoro-test');
+    const pythonPath = path.join(kokoroPath, 'env', 'Scripts', 'python.exe');
+    const serverScript = path.join(kokoroPath, 'kokoro_server.py');
+
+    console.log(`[TTS] Starting server: ${pythonPath} ${serverScript} ${TTS_PORT}`);
+
+    try {
+        ttsServerProcess = spawn(pythonPath, [serverScript, TTS_PORT.toString()], {
+            cwd: kokoroPath,
+            env: {
+                ...process.env,
+                HF_HUB_OFFLINE: '1'  // Use cached models only
+            },
+            detached: false,
+            windowsHide: true,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        ttsServerProcess.stdout?.on('data', (data) => {
+            console.log(`[TTS] ${data.toString().trim()}`);
+        });
+
+        ttsServerProcess.stderr?.on('data', (data) => {
+            console.error(`[TTS Error] ${data.toString().trim()}`);
+        });
+
+        ttsServerProcess.on('error', (err) => {
+            console.error(`[TTS] Failed to start: ${err.message}`);
+            ttsServerProcess = null;
+        });
+
+        ttsServerProcess.on('exit', (code) => {
+            console.log(`[TTS] Server exited with code ${code}`);
+            ttsServerProcess = null;
+        });
+
+        // Wait a moment for server to start
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        if (await isTtsServerRunning()) {
+            console.log('[TTS] Server started successfully');
+        } else {
+            console.warn('[TTS] Server may not have started properly');
+        }
+
+    } catch (error) {
+        console.error(`[TTS] Error starting server: ${error}`);
+    }
+}
+
+/**
+ * Stop the TTS server
+ */
+function stopTtsServer(): void {
+    if (ttsServerProcess) {
+        console.log('[TTS] Stopping server...');
+        ttsServerProcess.kill();
+        ttsServerProcess = null;
+    }
 }
 
 export function deactivate() {
+    stopTtsServer();
     if (mcpServer) {
         mcpServer.stop();
     }
