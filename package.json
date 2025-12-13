@@ -4,6 +4,7 @@
   "description": "MCP toolkit for VS Code Remote SSH - notifications, TTS, and browser automation",
   "version": "0.1.0",
   "publisher": "kllam",
+  "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
