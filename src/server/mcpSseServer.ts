@@ -275,6 +275,28 @@ const TOOLS = [
                 }
             }
         }
+    },
+    {
+        name: 'browser_list_pages',
+        description: 'List all open browser pages/tabs',
+        inputSchema: {
+            type: 'object',
+            properties: {}
+        }
+    },
+    {
+        name: 'browser_switch_page',
+        description: 'Switch to a specific browser page by index',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                index: {
+                    type: 'number',
+                    description: 'Page index (0-based)'
+                }
+            },
+            required: ['index']
+        }
     }
 ];
 
@@ -571,6 +593,14 @@ export class McpSseServer {
 
                 case 'browser_console':
                     result = await this.handleBrowserConsole(args);
+                    break;
+
+                case 'browser_list_pages':
+                    result = await this.handleBrowserListPages();
+                    break;
+
+                case 'browser_switch_page':
+                    result = await this.handleBrowserSwitchPage(args);
                     break;
 
                 default:
@@ -1011,6 +1041,66 @@ export class McpSseServer {
             return { success: true, logs, count: logs.length };
         } catch (error) {
             return { success: false, logs: [], count: 0, error: `Console failed: ${error}` };
+        }
+    }
+
+    /**
+     * Handle browser_list_pages tool - list all open pages
+     */
+    private async handleBrowserListPages(): Promise<{ success: boolean; pages: Array<{ index: number; url: string; title: string; isCurrent: boolean }>; error?: string }> {
+        try {
+            if (!browser) {
+                return { success: false, pages: [], error: 'Browser not started. Navigate to a URL first.' };
+            }
+
+            const allPages = await browser.pages();
+            const pageInfos = await Promise.all(allPages.map(async (p, index) => ({
+                index,
+                url: p.url(),
+                title: await p.title(),
+                isCurrent: p === page
+            })));
+
+            return { success: true, pages: pageInfos };
+        } catch (error) {
+            return { success: false, pages: [], error: `List pages failed: ${error}` };
+        }
+    }
+
+    /**
+     * Handle browser_switch_page tool - switch to a specific page
+     */
+    private async handleBrowserSwitchPage(args: Record<string, unknown>): Promise<{ success: boolean; url?: string; title?: string; error?: string }> {
+        const index = args.index as number;
+
+        if (typeof index !== 'number') {
+            return { success: false, error: 'Page index is required' };
+        }
+
+        try {
+            if (!browser) {
+                return { success: false, error: 'Browser not started. Navigate to a URL first.' };
+            }
+
+            const allPages = await browser.pages();
+
+            if (index < 0 || index >= allPages.length) {
+                return { success: false, error: `Invalid page index: ${index}. Available: 0-${allPages.length - 1}` };
+            }
+
+            page = allPages[index];
+            await page.bringToFront();
+
+            // Setup console listener if not already
+            this.setupConsoleListener(page);
+
+            const url = page.url();
+            const title = await page.title();
+
+            this.log(`Switched to page ${index}: ${url}`);
+            return { success: true, url, title };
+        } catch (error) {
+            return { success: false, error: `Switch page failed: ${error}` };
         }
     }
 }
