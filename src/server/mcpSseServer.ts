@@ -172,7 +172,7 @@ const TOOLS = [
                 },
                 remoteHost: {
                     type: 'string',
-                    description: 'SCP destination to transfer screenshot (e.g., "user@host:/path")'
+                    description: 'SCP destination to transfer screenshot. Format: "user@host:/path" for port 22, or "user@host:port:/path" for custom port (e.g., "claude@example.com:33773:/home/claude")'
                 }
             },
             required: ['name']
@@ -788,10 +788,20 @@ export class McpSseServer {
 
         if (!browser || !browser.isConnected()) {
             this.log('Launching browser...');
+            const userDataDir = path.join(process.env.USERPROFILE || '', '.cache', 'puppeteer', 'user-data');
+            const extensionPath = path.join(userDataDir, 'Default', 'Extensions', 'pfnededegaaopdmhkdmcofjmoldfiped', '3.4.5_0');
+            this.log(`Extension path: ${extensionPath}`);
             browser = await puppeteer!.launch({
                 headless: false,  // Show browser window
+                userDataDir: userDataDir,
                 defaultViewport: { width: 1280, height: 800 },
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
+                ignoreDefaultArgs: ['--disable-extensions'],
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    `--disable-extensions-except=${extensionPath}`,
+                    `--load-extension=${extensionPath}`
+                ]
             });
             const pages = await browser.pages();
             page = pages[0] || await browser.newPage();
@@ -903,8 +913,18 @@ export class McpSseServer {
                     const fileName = `${name}-${Date.now()}.png`;
                     // Use forward slashes for SCP on Windows
                     const scpPath = screenshotPath.replace(/\\/g, '/');
-                    const remoteFile = `${remoteHost}/${fileName}`;
-                    execSync(`scp "${scpPath}" "${remoteFile}"`, { timeout: 30000 });
+                    let scpCmd: string;
+                    let remoteFile: string;
+                    const portMatch = remoteHost.match(/^([^:]+@[^:]+):(\d+):(.+)$/);
+                    if (portMatch) {
+                        const [, userHost, port, remotePath] = portMatch;
+                        remoteFile = `${remotePath}/${fileName}`;
+                        scpCmd = `scp -P ${port} "${scpPath}" "${userHost}:${remoteFile}"`;
+                    } else {
+                        remoteFile = `${remoteHost}/${fileName}`;
+                        scpCmd = `scp "${scpPath}" "${remoteFile}"`;
+                    }
+                    execSync(scpCmd, { timeout: 30000 });
                     this.log(`Screenshot transferred to: ${remoteFile}`);
                     return { success: true, path: screenshotPath, remotePath: remoteFile };
                 } catch (scpError) {
