@@ -229,7 +229,7 @@ public class WF {
     }
 }
 "@
-Get-Process -Name "Code" -EA 0 | Select -First 1 | % { [WF]::Flash($_.MainWindowHandle, ${count}) }
+Get-Process -Name "Code" -EA 0 | Where-Object { $_.MainWindowHandle -ne 0 } | Select -First 1 | % { [WF]::Flash($_.MainWindowHandle, ${count}) }
 `;
                 // Encode the script as base64 to avoid escaping issues
                 const encodedScript = Buffer.from(script, 'utf16le').toString('base64');
