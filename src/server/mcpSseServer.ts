@@ -297,6 +297,20 @@ const TOOLS = [
             },
             required: ['index']
         }
+    },
+    {
+        name: 'browser_snapshot',
+        description: 'Take a text snapshot of the page based on the accessibility tree (a11y tree). Each element has a unique identifier (uid) for reference. Use this for understanding page structure without screenshots.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                verbose: {
+                    type: 'boolean',
+                    description: 'Include all accessibility tree information (default: false for condensed output)',
+                    default: false
+                }
+            }
+        }
     }
 ];
 
@@ -601,6 +615,10 @@ export class McpSseServer {
 
                 case 'browser_switch_page':
                     result = await this.handleBrowserSwitchPage(args);
+                    break;
+
+                case 'browser_snapshot':
+                    result = await this.handleBrowserSnapshot(args);
                     break;
 
                 default:
@@ -1121,6 +1139,109 @@ export class McpSseServer {
             return { success: true, url, title };
         } catch (error) {
             return { success: false, error: `Switch page failed: ${error}` };
+        }
+    }
+
+    /**
+     * Handle browser_snapshot tool - take a11y tree snapshot
+     */
+    private async handleBrowserSnapshot(args: Record<string, unknown>): Promise<{ success: boolean; snapshot?: string; elementCount?: number; error?: string }> {
+        const verbose = args.verbose as boolean || false;
+
+        try {
+            const p = await this.ensureBrowser();
+
+            // Get accessibility tree snapshot from Puppeteer
+            const rootNode = await p.accessibility.snapshot({
+                interestingOnly: !verbose
+            });
+
+            if (!rootNode) {
+                return { success: false, error: 'Failed to get accessibility snapshot - page may not be loaded' };
+            }
+
+            // Format the snapshot with unique IDs
+            let idCounter = 0;
+            const snapshotId = Date.now();
+
+            interface AXNode {
+                role?: string;
+                name?: string;
+                value?: string;
+                description?: string;
+                keyshortcuts?: string;
+                roledescription?: string;
+                valuetext?: string;
+                disabled?: boolean;
+                expanded?: boolean;
+                focused?: boolean;
+                modal?: boolean;
+                multiline?: boolean;
+                multiselectable?: boolean;
+                readonly?: boolean;
+                required?: boolean;
+                selected?: boolean;
+                checked?: boolean | 'mixed';
+                pressed?: boolean | 'mixed';
+                level?: number;
+                valuemin?: number;
+                valuemax?: number;
+                autocomplete?: string;
+                haspopup?: string;
+                invalid?: string;
+                orientation?: string;
+                children?: AXNode[];
+            }
+
+            const formatNode = (node: AXNode, depth: number): string => {
+                const uid = snapshotId + '_' + (idCounter++);
+                const indent = '  '.repeat(depth);
+                const parts: string[] = ['uid=' + uid];
+
+                if (node.role) {
+                    parts.push(node.role === 'none' ? 'ignored' : node.role);
+                }
+                if (node.name) {
+                    parts.push('"' + node.name + '"');
+                }
+                if (node.value !== undefined) {
+                    parts.push('value="' + node.value + '"');
+                }
+                if (node.description) {
+                    parts.push('description="' + node.description + '"');
+                }
+                if (node.disabled) parts.push('disabled');
+                if (node.expanded !== undefined) {
+                    parts.push('expandable');
+                    if (node.expanded) parts.push('expanded');
+                }
+                if (node.focused) parts.push('focused');
+                if (node.selected) parts.push('selected');
+                if (node.checked !== undefined) {
+                    parts.push('checked=' + node.checked);
+                }
+                if (node.level !== undefined) {
+                    parts.push('level=' + node.level);
+                }
+
+                let result = indent + parts.join(' ') + '\n';
+
+                if (node.children) {
+                    for (const child of node.children) {
+                        result += formatNode(child, depth + 1);
+                    }
+                }
+
+                return result;
+            };
+
+            const snapshot = formatNode(rootNode as AXNode, 0);
+            const elementCount = idCounter;
+
+            this.log('Snapshot taken: ' + elementCount + ' elements');
+            return { success: true, snapshot, elementCount };
+        } catch (error) {
+            return { success: false, error: 'Snapshot failed: ' + error };
         }
     }
 }
