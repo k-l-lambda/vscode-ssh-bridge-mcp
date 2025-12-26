@@ -11,7 +11,7 @@ import * as path from 'path';
 import * as http from 'http';
 
 let notificationManager: NotificationManager;
-let mcpServer: McpSseServer;
+let mcpServer: McpSseServer | null = null;
 let ttsServerProcess: ChildProcess | null = null;
 
 const TTS_PORT = 19849;  // Use a unique port to avoid conflicts
@@ -26,18 +26,24 @@ export async function activate(context: vscode.ExtensionContext) {
     // Initialize notification manager (runs on UI side - local)
     notificationManager = new NotificationManager(context);
 
-    // Initialize and start MCP SSE server
-    mcpServer = new McpSseServer(notificationManager);
-
-    try {
-        const port = await mcpServer.start();
-
-        // Show connection info
-        const configCmd = `claude mcp add ssh-bridge -s user --transport sse http://127.0.0.1:${port}/sse`;
-        console.log(`MCP Server ready. Add to Claude Code with:\n${configCmd}`);
-
-    } catch (error) {
-        vscode.window.showErrorMessage(`Failed to start MCP server: ${error}`);
+    // Only start MCP server in local mode
+    // In remote mode, use the local VS Code's server via SSH port forwarding (9847)
+    if (!isRemote) {
+        // Initialize and start MCP SSE server
+        mcpServer = new McpSseServer(notificationManager);
+        try {
+            const port = await mcpServer.start();
+            // Show connection info
+            const configCmd = `claude mcp add ssh-bridge -s user --transport sse http://127.0.0.1:${port}/sse`;
+            console.log(`MCP Server ready. Add to Claude Code with:
+${configCmd}`);
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to start MCP server: ${error}`);
+        }
+        // Start TTS server in background (only in local mode)
+        startTtsServer();
+    } else {
+        console.log('Running in remote mode - SSE server not started. Use local VS Code server via port forwarding (9847).');
     }
 
     // Register commands
@@ -52,7 +58,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const testConnectionCmd = vscode.commands.registerCommand(
         'ssh-bridge-mcp.testConnection',
         async () => {
-            const port = mcpServer.getPort();
+            const port = mcpServer ? mcpServer.getPort() : 9847;
             vscode.window.showInformationMessage(
                 `MCP Server running on port ${port}. ` +
                 `Add to Claude Code: claude mcp add ssh-bridge -s user --transport sse http://127.0.0.1:${port}/sse`
@@ -63,7 +69,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const showSetupCmd = vscode.commands.registerCommand(
         'ssh-bridge-mcp.showSetup',
         async () => {
-            const port = mcpServer.getPort();
+            const port = mcpServer ? mcpServer.getPort() : 9847;
             const panel = vscode.window.createWebviewPanel(
                 'mcpSetup',
                 'SSH Bridge MCP Setup',
@@ -125,8 +131,6 @@ export async function activate(context: vscode.ExtensionContext) {
         remoteNotifyCmd
     );
 
-    // Start TTS server in background
-    startTtsServer();
 }
 
 /**
