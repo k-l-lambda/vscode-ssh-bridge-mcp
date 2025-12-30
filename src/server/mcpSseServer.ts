@@ -928,6 +928,27 @@ export class McpSseServer {
             if (remoteHost) {
                 try {
                     const { execSync } = require('child_process');
+
+                    // Wait for file to be fully written and readable
+                    const maxRetries = 10;
+                    for (let i = 0; i < maxRetries; i++) {
+                        try {
+                            const stats = fs.statSync(screenshotPath);
+                            if (stats.size > 0) {
+                                // Try to open file to ensure it's not locked
+                                const fd = fs.openSync(screenshotPath, 'r');
+                                fs.closeSync(fd);
+                                break;
+                            }
+                        } catch (e) {
+                            // File not ready yet
+                        }
+                        if (i === maxRetries - 1) {
+                            throw new Error(`Screenshot file not ready after ${maxRetries} retries`);
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+
                     const fileName = `${name}-${Date.now()}.png`;
                     // Use forward slashes for SCP on Windows
                     const scpPath = screenshotPath.replace(/\\/g, '/');
