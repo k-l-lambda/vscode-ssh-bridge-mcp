@@ -41,6 +41,10 @@
       {
         "command": "ssh-bridge-mcp.showSetup",
         "title": "SSH Bridge: Show Setup Instructions"
+      },
+      {
+        "command": "ssh-bridge-mcp.manageTunnels",
+        "title": "SSH Bridge: Manage Remote Tunnels"
       }
     ],
     "configuration": {
@@ -61,6 +65,35 @@
           "type": "array",
           "default": [],
           "description": "List of MCP server endpoints (SSE)"
+        },
+        "ssh-bridge-mcp.remoteTunnels": {
+          "type": "array",
+          "default": [],
+          "description": "List of remote hosts to create reverse SSH tunnels for",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string",
+                "description": "Remote host in format user@host:port or user@host"
+              },
+              "remotePort": {
+                "type": "number",
+                "description": "Remote port to bind (default: 9847)",
+                "default": 9847
+              },
+              "identityFile": {
+                "type": "string",
+                "description": "Path to SSH identity file (optional)"
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "Enable this tunnel",
+                "default": true
+              }
+            },
+            "required": ["host"]
+          }
         }
       }
     }

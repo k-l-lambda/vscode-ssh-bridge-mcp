@@ -6,12 +6,14 @@
 import * as vscode from 'vscode';
 import { NotificationManager } from './ui/notifications';
 import { McpSseServer } from './server/mcpSseServer';
+import { TunnelManager, TunnelConfig } from './server/tunnelManager';
 import { ChildProcess, spawn } from 'child_process';
 import * as path from 'path';
 import * as http from 'http';
 
 let notificationManager: NotificationManager;
 let mcpServer: McpSseServer | null = null;
+let tunnelManager: TunnelManager | null = null;
 let ttsServerProcess: ChildProcess | null = null;
 
 const TTS_PORT = 19849;  // Use a unique port to avoid conflicts
@@ -34,6 +36,7 @@ export async function activate(context: vscode.ExtensionContext) {
         try {
             const port = await mcpServer.start();
             // Show connection info
+            await startTunnels(port);
             const configCmd = `claude mcp add ssh-bridge -s user --transport sse http://127.0.0.1:${port}/sse`;
             console.log(`MCP Server ready. Add to Claude Code with:
 ${configCmd}`);
@@ -133,6 +136,22 @@ ${configCmd}`);
 
 }
 
+
+/**
+ * Start SSH tunnels from configuration
+ */
+async function startTunnels(localPort: number): Promise<void> {
+    const config = vscode.workspace.getConfiguration('ssh-bridge-mcp');
+    const tunnelConfigs = config.get<TunnelConfig[]>('remoteTunnels', []);
+    if (tunnelConfigs.length === 0) {
+        console.log('[Tunnels] No remote tunnels configured');
+        return;
+    }
+    console.log('[Tunnels] Starting ' + tunnelConfigs.length + ' tunnel(s)...');
+    tunnelManager = new TunnelManager(localPort);
+    await tunnelManager.startTunnels(tunnelConfigs);
+}
+
 /**
  * Check if TTS server is running
  */
@@ -226,6 +245,9 @@ function stopTtsServer(): void {
 }
 
 export function deactivate() {
+    if (tunnelManager) {
+        tunnelManager.stopAll();
+    }
     stopTtsServer();
     if (mcpServer) {
         mcpServer.stop();
